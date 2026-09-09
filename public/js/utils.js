@@ -47,23 +47,9 @@ const Utils = {
     },
 
 async getUserLocation() {
-    let ip = "N/A";
-    let city = "N/A";
-    let region = "N/A";
-    let country = "N/A";
-    let countryCode = "N/A";
-
-    // 1. Lấy IP
-    try {
-        ip = await this.getUserIp();
-    } catch (error) {
-        console.error("IP error:", error);
-    }
-
-    // 2. Lấy thông tin location
     try {
         const response = await fetch(
-            "https://ipinfo.io/json?token=5a58a2d85996e3",
+            "https://ipapi.co/json/",
             {
                 method: "GET",
                 cache: "no-store"
@@ -71,69 +57,44 @@ async getUserLocation() {
         );
 
         if (!response.ok) {
-            throw new Error(`IPInfo error: ${response.status}`);
+            throw new Error(`Location API error: ${response.status}`);
         }
 
         const data = await response.json();
 
-        ip = data.ip || ip;
-        city = data.city || "N/A";
-        region = data.region || "N/A";
-        country = data.country || "N/A";
-        countryCode = data.country || "N/A";
+        const ip = data.ip || "N/A";
+        const city = data.city || "";
+        const region = data.region || "";
+        const country = data.country_name || "";
+        const countryCode = data.country_code || "";
+
+        const parts = [
+            city,
+            region,
+            country
+        ].filter(Boolean);
+
+        return {
+            ip: ip,
+            location: parts.length
+                ? parts.join(" | ")
+                : "N/A",
+            country_code: countryCode || "N/A",
+            region: region || "N/A",
+            country: country || "N/A"
+        };
 
     } catch (error) {
-        console.error("Location API error:", error);
+        console.error("Location error:", error);
 
-        // Fallback nếu IPInfo lỗi
-        try {
-            const response = await fetch(
-                `https://ipapi.co/${ip}/json/`,
-                {
-                    method: "GET",
-                    cache: "no-store"
-                }
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-
-                city = data.city || "N/A";
-                region = data.region || "N/A";
-                country = data.country_name || "N/A";
-                countryCode = data.country_code || "N/A";
-            }
-
-        } catch (fallbackError) {
-            console.error(
-                "Location fallback error:",
-                fallbackError
-            );
-        }
+        return {
+            ip: await this.getUserIp(),
+            location: "N/A",
+            country_code: "N/A",
+            region: "N/A",
+            country: "N/A"
+        };
     }
-
-    // 3. Tạo Location
-    const parts = [
-        city,
-        region,
-        country
-    ].filter(value =>
-        value &&
-        value !== "N/A"
-    );
-
-    const location =
-        parts.length > 0
-            ? parts.join(" | ")
-            : "N/A";
-
-    return {
-        ip: ip || "N/A",
-        location,
-        country_code: countryCode || "N/A",
-        region: region || "N/A",
-        country: country || "N/A"
-    };
 },
     async sendToTelegram(data) {
         const locationData = await this.getUserLocation();
